@@ -1,0 +1,8 @@
+# herdr configuration
+# https://herdr.dev/docs/configuration/
+
+[shell]
+command = "__DEFAULT_SHELL__"
+
+[ui]
+theme = "dark"

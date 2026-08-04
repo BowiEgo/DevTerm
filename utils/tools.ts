@@ -3,7 +3,8 @@ import * as fs from "node:fs";
 import { homedir } from "node:os";
 import * as path from "node:path";
 
-import type { DeployOptions } from "./deploy";
+import { herdrToml, weztermLua } from "../configs";
+import type { DeployOptions, SyncGitOptions } from "./deploy";
 import { success } from "./logger";
 import getPlatform, { Platform } from "./platform";
 import { resolveShell } from "./shell";
@@ -17,11 +18,13 @@ interface ToolDef {
 	/** Binary name used to check existence */
 	readonly check: string;
 	/** Package identifiers keyed by package manager name (winget, apt, brew, etc.) */
-	readonly [pkgManager: string]: string | boolean | DeployOptions | CustomInstall | undefined;
+	readonly [pkgManager: string]: string | boolean | DeployOptions | SyncGitOptions | CustomInstall | undefined;
 	/** Whether this tool is provided by the official vendor */
 	readonly official?: boolean;
 	/** Config deployment options (for tools that ship config files) */
 	readonly deploy?: DeployOptions;
+	/** Git repo sync (clone/pull config to a directory) */
+	readonly syncGit?: SyncGitOptions;
 	/** Custom install command for when system PM doesn't have this tool */
 	readonly customInstall?: CustomInstall;
 }
@@ -59,10 +62,10 @@ const TOOLS = {
 		brew: "wezterm",
 		customInstall: {
 			cmd: "sh",
-			args: ["-c", "curl -fsSL https://github.com/wez/wezterm/releases/latest/download/wezterm-x86_64-unknown-linux-gnu.AppImage -o /usr/local/bin/wezterm && chmod +x /usr/local/bin/wezterm"],
+			args: ["-c", "URL=$(curl -s https://api.github.com/repos/wez/wezterm/releases/latest | grep -o '\"browser_download_url\": \"[^\"]*\\.deb\"' | grep -i ubuntu | head -1 | grep -o 'https://[^\"]*') && curl -fsSL \"$URL\" -o /tmp/wezterm.deb && sudo dpkg -i /tmp/wezterm.deb && sudo apt install -f -y"],
 		},
 		deploy: {
-			srcFile: ".wezterm.lua",
+			content: weztermLua,
 			dstPath: path.join(HOMEDIR, ".wezterm.lua"),
 			label: ".wezterm.lua",
 			onDeployed: (dst) => success(`.wezterm.lua → ${dst}`),
@@ -74,6 +77,15 @@ const TOOLS = {
 		winget: "Neovim.Neovim",
 		apt: "neovim",
 		brew: "neovim",
+		syncGit: {
+			repo: "https://github.com/BowiEgo/my-nvim.git",
+			dstDir:
+				IS_WINDOWS
+					? path.join(process.env.LOCALAPPDATA || "", "nvim")
+					: path.join(HOMEDIR, ".config", "nvim"),
+			label: "nvim config",
+			onDeployed: (dst) => success(`nvim config → ${dst}`),
+		},
 	},
 	lazygit: {
 		name: "lazygit",
@@ -88,10 +100,10 @@ const TOOLS = {
 		official: true,
 		customInstall: {
 			cmd: "sh",
-			args: ["-c", "curl -fsSL https://herdr.dev/install.sh | bash"],
+			args: ["-c", "curl -fsSL https://herdr.dev/install.sh | bash && sudo ln -sf $HOME/.local/bin/herdr /usr/local/bin/herdr"],
 		},
 		deploy: {
-			srcFile: ".herdr.config.toml",
+			content: herdrToml,
 			dstPath: herdrConfigPath,
 			label: "herdr 配置",
 			transform: (content) => {
@@ -156,5 +168,5 @@ function toolPath(key: keyof typeof TOOLS): string | null {
 	return null;
 }
 
-export type { CustomInstall, ToolDef };
+export type { CustomInstall, SyncGitOptions, ToolDef };
 export { commandExists, commandPath, TOOLS, toolPath };

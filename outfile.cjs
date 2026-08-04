@@ -2581,7 +2581,7 @@ var require_lib = __commonJS({
           answer = prompt._injected ? getInjectedAnswer(prompt._injected, question.initial) : await prompts2[type](question);
           answers[name] = answer = await getFormattedAnswer(question, answer, true);
           quit = await onSubmit(question, answer, answers);
-        } catch (err) {
+        } catch (err2) {
           quit = !await onCancel(question, answers);
         }
         if (quit)
@@ -2605,6 +2605,9 @@ var require_lib = __commonJS({
     module2.exports = Object.assign(prompt, { prompt, prompts: prompts2, inject, override });
   }
 });
+
+// index.ts
+var import_node_child_process4 = require("child_process");
 
 // node_modules/kolorist/dist/esm/index.mjs
 var enabled = true;
@@ -2696,12 +2699,18 @@ var import_prompts = __toESM(require_lib());
 var banner = "\x1B[38;2;26;114;209mD\x1B[39m\x1B[38;2;37;111;211me\x1B[39m\x1B[38;2;47;107;213mv\x1B[39m\x1B[38;2;58;104;215mT\x1B[39m\x1B[38;2;69;100;217me\x1B[39m\x1B[38;2;79;97;219mr\x1B[39m\x1B[38;2;90;93;221mm\x1B[39m\x1B[38;2;100;90;223m-\x1B[39m\x1B[38;2;111;86;226m\u5FEB\x1B[39m\x1B[38;2;122;83;228m\u901F\x1B[39m\x1B[38;2;132;79;230m\u642D\x1B[39m\x1B[38;2;143;76;232m\u5EFA\x1B[39m\x1B[38;2;154;72;234m\u81EA\x1B[39m\x1B[38;2;164;69;236m\u5DF1\x1B[39m\x1B[38;2;175;65;238m\u7684\x1B[39m\x1B[38;2;185;62;240m\u7EC8\x1B[39m\x1B[38;2;196;58;242m\u7AEF\x1B[39m\x1B[38;2;196;58;242m\u73AF\x1B[39m\x1B[38;2;196;58;242m\u5883\x1B[39m";
 var banner_default = banner;
 
+// utils/deploy.ts
+var import_node_child_process2 = require("child_process");
+var fs = __toESM(require("fs"));
+var path = __toESM(require("path"));
+
 // utils/logger.ts
 var import_node_child_process = require("child_process");
 var out = (s = "") => process.stdout.write(`${s}
 `);
 var success = (m) => out(`  ${green("\u2713")} ${m}`);
 var warn = (m) => out(`  ${yellow("\u26A0")}  ${m}`);
+var err = (m) => out(`  ${red("\u2717")} ${m}`);
 var info = (m) => out(`  ${dim(m)}`);
 var step = (n, m) => {
   out(`${yellow(bold(`\u25B8 [${n}]`))} ${m}`);
@@ -2721,6 +2730,101 @@ function runConsole(label, command, args, opts) {
   });
 }
 
+// utils/deploy.ts
+function backupIfExists(filePath) {
+  if (fs.existsSync(filePath)) {
+    fs.renameSync(filePath, `${filePath}.bak`);
+  }
+}
+function deployConfig(opts) {
+  var _a;
+  const dst = typeof opts.dstPath === "function" ? opts.dstPath() : opts.dstPath;
+  backupIfExists(dst);
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  const content = opts.transform ? opts.transform(opts.content) : opts.content;
+  fs.writeFileSync(dst, content);
+  (_a = opts.onDeployed) == null ? void 0 : _a.call(opts, dst);
+  return dst;
+}
+function syncGitRepo(opts) {
+  var _a;
+  const dst = typeof opts.dstDir === "function" ? opts.dstDir() : opts.dstDir;
+  if (fs.existsSync(dst)) {
+    if (fs.existsSync(path.join(dst, ".git"))) {
+      if (opts.force) {
+        const bak = `${dst}.bak`;
+        info(`${opts.label}: backing up to ${bak}...`);
+        try {
+          fs.rmSync(bak, { recursive: true, force: true });
+        } catch {
+        }
+        fs.renameSync(dst, bak);
+        info(`${opts.label}: resetting & pulling...`);
+        return cloneRepo(opts);
+      }
+      info(`${opts.label}: repo exists, pulling latest...`);
+      if (opts.branch) {
+        (0, import_node_child_process2.spawnSync)("git", ["-C", dst, "fetch", "--depth", "1"], {
+          stdio: "ignore",
+          shell: process.platform === "win32"
+        });
+        (0, import_node_child_process2.spawnSync)("git", ["-C", dst, "checkout", opts.branch], {
+          stdio: "inherit",
+          shell: process.platform === "win32"
+        });
+      }
+      let r = (0, import_node_child_process2.spawnSync)("git", ["-C", dst, "pull", "--rebase"], {
+        stdio: "inherit",
+        shell: process.platform === "win32"
+      });
+      if (r.status !== 0) {
+        info(`${opts.label}: rebase failed, trying merge...`);
+        r = (0, import_node_child_process2.spawnSync)("git", ["-C", dst, "pull", "--no-rebase"], {
+          stdio: "inherit",
+          shell: process.platform === "win32"
+        });
+      }
+      if (r.status === 0) {
+        const st = (0, import_node_child_process2.spawnSync)("git", ["-C", dst, "status", "--porcelain"], {
+          stdio: "pipe",
+          shell: process.platform === "win32",
+          encoding: "utf8"
+        });
+        if (st.stdout && st.stdout.trim()) {
+          warn(`${opts.label}: pulled but local changes remain`);
+          return "conflict";
+        }
+        (_a = opts.onDeployed) == null ? void 0 : _a.call(opts, dst);
+        return "ok";
+      }
+      warn(`${opts.label}: pull failed, directory unchanged`);
+      return "conflict";
+    }
+    backupIfExists(dst);
+  }
+  return cloneRepo(opts);
+}
+function cloneRepo(opts) {
+  var _a;
+  const dst = typeof opts.dstDir === "function" ? opts.dstDir() : opts.dstDir;
+  fs.mkdirSync(path.dirname(dst), { recursive: true });
+  info(`${opts.label}: cloning ${opts.repo}${opts.branch ? ` (${opts.branch})` : ""}...`);
+  const cloneArgs = ["clone", "--depth", "1"];
+  if (opts.branch)
+    cloneArgs.push("--branch", opts.branch);
+  cloneArgs.push(opts.repo, dst);
+  const r = (0, import_node_child_process2.spawnSync)("git", cloneArgs, {
+    stdio: "inherit",
+    shell: process.platform === "win32"
+  });
+  if (r.status === 0) {
+    (_a = opts.onDeployed) == null ? void 0 : _a.call(opts, dst);
+    return "ok";
+  }
+  warn(`${opts.label}: clone failed`);
+  return "failed";
+}
+
 // utils/platform.ts
 function getPlatform() {
   switch (process.platform) {
@@ -2737,14 +2841,45 @@ function getPlatform() {
 var platform_default = getPlatform;
 
 // utils/tools.ts
-var import_node_child_process2 = require("child_process");
-var fs2 = __toESM(require("fs"));
+var import_node_child_process3 = require("child_process");
+var fs3 = __toESM(require("fs"));
 var import_node_os = require("os");
-var path2 = __toESM(require("path"));
+var path3 = __toESM(require("path"));
+
+// configs/index.ts
+var weztermLua = `-- WezTerm configuration
+-- https://wezfurlong.org/wezterm/config/files.html
+
+local wezterm = require("wezterm")
+
+return {
+	font_size = 13.0,
+	color_scheme = "Catppuccin Mocha",
+
+	-- Tab bar
+	use_fancy_tab_bar = false,
+	hide_tab_bar_if_only_one_tab = true,
+
+	-- Window
+	window_padding = { left = 8, right = 8, top = 8, bottom = 8 },
+	window_decorations = "RESIZE",
+
+	default_prog = { "__DEFAULT_SHELL__" },
+}
+`;
+var herdrToml = `# herdr configuration
+# https://herdr.dev/docs/configuration/
+
+[shell]
+command = "__DEFAULT_SHELL__"
+
+[ui]
+theme = "dark"
+`;
 
 // utils/shell.ts
-var fs = __toESM(require("fs"));
-var path = __toESM(require("path"));
+var fs2 = __toESM(require("fs"));
+var path2 = __toESM(require("path"));
 var IS_WINDOWS = process.platform === "win32";
 function resolveShell() {
   if (IS_WINDOWS) {
@@ -2752,7 +2887,7 @@ function resolveShell() {
       commandPath("pwsh.exe"),
       "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
       commandPath("powershell.exe"),
-      path.join(
+      path2.join(
         process.env.WINDIR || "C:\\Windows",
         "System32",
         "WindowsPowerShell",
@@ -2762,13 +2897,13 @@ function resolveShell() {
       process.env.COMSPEC
     ];
     for (const c of candidates) {
-      if (c && fs.existsSync(c))
+      if (c && fs2.existsSync(c))
         return c;
     }
     return "cmd.exe";
   }
   const shell = process.env.SHELL;
-  if (shell && fs.existsSync(shell))
+  if (shell && fs2.existsSync(shell))
     return shell;
   for (const s of ["zsh", "bash", "fish", "pwsh", "sh"]) {
     const p = commandPath(s);
@@ -2783,13 +2918,13 @@ var HOMEDIR = (0, import_node_os.homedir)();
 var IS_WINDOWS2 = process.platform === "win32";
 function herdrConfigPath() {
   if (IS_WINDOWS2) {
-    return path2.join(
-      process.env.LOCALAPPDATA || path2.join(HOMEDIR, "AppData", "Local"),
+    return path3.join(
+      process.env.LOCALAPPDATA || path3.join(HOMEDIR, "AppData", "Local"),
       "herdr",
       "config.toml"
     );
   }
-  return path2.join(HOMEDIR, ".config", "herdr", "config.toml");
+  return path3.join(HOMEDIR, ".config", "herdr", "config.toml");
 }
 var TOOLS = {
   git: {
@@ -2807,11 +2942,11 @@ var TOOLS = {
     brew: "wezterm",
     customInstall: {
       cmd: "sh",
-      args: ["-c", "curl -fsSL https://github.com/wez/wezterm/releases/latest/download/wezterm-x86_64-unknown-linux-gnu.AppImage -o /usr/local/bin/wezterm && chmod +x /usr/local/bin/wezterm"]
+      args: ["-c", `URL=$(curl -s https://api.github.com/repos/wez/wezterm/releases/latest | grep -o '"browser_download_url": "[^"]*\\.deb"' | grep -i ubuntu | head -1 | grep -o 'https://[^"]*') && curl -fsSL "$URL" -o /tmp/wezterm.deb && sudo dpkg -i /tmp/wezterm.deb && sudo apt install -f -y`]
     },
     deploy: {
-      srcFile: ".wezterm.lua",
-      dstPath: path2.join(HOMEDIR, ".wezterm.lua"),
+      content: weztermLua,
+      dstPath: path3.join(HOMEDIR, ".wezterm.lua"),
       label: ".wezterm.lua",
       onDeployed: (dst) => success(`.wezterm.lua \u2192 ${dst}`)
     }
@@ -2821,7 +2956,13 @@ var TOOLS = {
     check: "nvim",
     winget: "Neovim.Neovim",
     apt: "neovim",
-    brew: "neovim"
+    brew: "neovim",
+    syncGit: {
+      repo: "https://github.com/BowiEgo/my-nvim.git",
+      dstDir: IS_WINDOWS2 ? path3.join(process.env.LOCALAPPDATA || "", "nvim") : path3.join(HOMEDIR, ".config", "nvim"),
+      label: "nvim config",
+      onDeployed: (dst) => success(`nvim config \u2192 ${dst}`)
+    }
   },
   lazygit: {
     name: "lazygit",
@@ -2836,10 +2977,10 @@ var TOOLS = {
     official: true,
     customInstall: {
       cmd: "sh",
-      args: ["-c", "curl -fsSL https://herdr.dev/install.sh | bash"]
+      args: ["-c", "curl -fsSL https://herdr.dev/install.sh | bash && sudo ln -sf $HOME/.local/bin/herdr /usr/local/bin/herdr"]
     },
     deploy: {
-      srcFile: ".herdr.config.toml",
+      content: herdrToml,
       dstPath: herdrConfigPath,
       label: "herdr \u914D\u7F6E",
       transform: (content) => {
@@ -2857,7 +2998,7 @@ var TOOLS = {
 function commandPath(cmd) {
   const p = platform_default();
   try {
-    const r = (0, import_node_child_process2.spawnSync)(
+    const r = (0, import_node_child_process3.spawnSync)(
       p === 1 /* Windows */ ? "where" : "sh",
       p === 1 /* Windows */ ? [cmd] : ["-c", `command -v ${cmd}`],
       { encoding: "utf8" }
@@ -2876,16 +3017,16 @@ function toolPath(key) {
   const platform = platform_default();
   if (key === "herdr") {
     const cands = platform === 1 /* Windows */ ? [
-      path2.join(
+      path3.join(
         process.env.LOCALAPPDATA || "",
         "Programs",
         "Herdr",
         "bin",
         "herdr.exe"
       )
-    ] : [path2.join((0, import_node_os.homedir)(), ".local", "bin", "herdr")];
+    ] : [path3.join((0, import_node_os.homedir)(), ".local", "bin", "herdr")];
     for (const c of cands) {
-      if (c && fs2.existsSync(c))
+      if (c && fs3.existsSync(c))
         return c;
     }
   }
@@ -2977,6 +3118,117 @@ function pmInstallArgs(pkgName, pm) {
 }
 
 // index.ts
+function pmRemoveArgs(pkgName, pm) {
+  const removeMap = {
+    apt: ["sudo", "apt", "remove", "-y", pkgName],
+    dnf: ["sudo", "dnf", "remove", "-y", pkgName],
+    pacman: ["sudo", "pacman", "-R", "--noconfirm", pkgName],
+    zypper: ["sudo", "zypper", "remove", "-y", pkgName],
+    apk: ["sudo", "apk", "del", pkgName],
+    brew: ["brew", "uninstall", pkgName],
+    winget: ["winget", "uninstall", "--id", pkgName, "-e", "--silent"],
+    scoop: ["scoop", "uninstall", pkgName]
+  };
+  return removeMap[pm.name] ?? ["echo", "no remove command for", pm.name];
+}
+async function doctor(argv) {
+  const allKeys = Object.keys(TOOLS);
+  if (argv.all) {
+    for (const key of allKeys) {
+      checkOne(key);
+    }
+    return;
+  }
+  const response = await (0, import_prompts.default)(
+    {
+      type: "multiselect",
+      name: "tools",
+      message: "Select tools to check:",
+      choices: allKeys.map((k) => ({
+        title: TOOLS[k].name,
+        value: k
+      }))
+    },
+    {
+      onCancel: () => process.exit(0)
+    }
+  );
+  divider();
+  for (const key of response.tools) {
+    checkOne(key);
+  }
+  divider();
+}
+function checkOne(key) {
+  const t = TOOLS[key];
+  const inPath = commandPath(t.check);
+  const fallback = toolPath(key);
+  if (inPath) {
+    success(`${t.name}  \u2713  (${inPath})`);
+  } else if (fallback) {
+    warn(`${t.name}  \u26A0  installed but not in PATH (${fallback})`);
+    info(`  \u21B3 fish: fish_add_path ${fallback.replace(/\/[^/]+$/, "")}`);
+    info(`  \u21B3 bash: export PATH="${fallback.replace(/\/[^/]+$/, "")}:$PATH"`);
+  } else {
+    err(`${t.name}  \u2717  not installed`);
+  }
+}
+async function syncConfigs() {
+  const configs = [
+    { key: "nvim", label: "Neovim", type: "git" },
+    { key: "wezterm", label: "WezTerm", type: "file" },
+    { key: "herdr", label: "herdr", type: "file" }
+  ].filter((c) => {
+    if (c.type === "file")
+      return TOOLS[c.key].deploy;
+    return TOOLS[c.key].syncGit;
+  });
+  const response = await (0, import_prompts.default)(
+    {
+      type: "multiselect",
+      name: "configs",
+      message: "Select configs to sync:",
+      choices: configs.map((c) => {
+        const desc = c.type === "git" ? `git clone ${TOOLS[c.key].syncGit.repo}` : `write ${TOOLS[c.key].deploy.label}`;
+        return { title: `${c.label} config  (${desc})`, value: c.key };
+      })
+    },
+    {
+      onCancel: () => process.exit(0)
+    }
+  );
+  if (response.configs.length === 0) {
+    info("No configs selected.");
+    return;
+  }
+  divider();
+  for (const key of response.configs) {
+    const entry = configs.find((c) => c.key === key);
+    if (!entry)
+      continue;
+    if (entry.type === "git" && TOOLS[entry.key].syncGit) {
+      let result = syncGitRepo(TOOLS[entry.key].syncGit);
+      if (result === "conflict") {
+        const confirm = await (0, import_prompts.default)(
+          {
+            type: "confirm",
+            name: "value",
+            message: `\u6709\u672C\u5730\u4FEE\u6539\uFF0C\u662F\u5426\u5907\u4EFD(${TOOLS[entry.key].syncGit.label}.bak)\u5E76\u5F3A\u5236\u91CD\u7F6E\u4E3A\u8FDC\u7A0B\u6700\u65B0\uFF1F`,
+            initial: false
+          },
+          { onCancel: () => {
+          } }
+        );
+        if (confirm.value) {
+          syncGitRepo({ ...TOOLS[entry.key].syncGit, force: true });
+        }
+      }
+    } else if (entry.type === "file" && TOOLS[entry.key].deploy) {
+      deployConfig(TOOLS[entry.key].deploy);
+    }
+  }
+  divider();
+}
 async function promptTools(argv) {
   if (argv.default || argv.nvim !== void 0 || argv.wezterm !== void 0 || argv.herdr !== void 0 || argv.pi !== void 0) {
     return {
@@ -2991,32 +3243,15 @@ async function promptTools(argv) {
       {
         type: "multiselect",
         name: "tools",
-        message: "Select options for your terminal environment:",
+        message: "Select tools to install:",
         choices: [
-          {
-            title: `Install ${magenta("NeoVim")} as IDE?`,
-            value: "needsNeoVim"
-          },
-          {
-            title: `Install ${magenta("Wezterm")} as terminal?`,
-            value: "needsWezterm"
-          },
-          {
-            title: `Install ${magenta("Herdr")} for AI Agent multiplexers?`,
-            value: "needsHerdr"
-          },
-          {
-            title: `Add ${magenta("Pi")} as AI Agent?`,
-            value: "needsPi"
-          }
+          { title: `Install ${magenta("NeoVim")} as IDE?`, value: "needsNeoVim" },
+          { title: `Install ${magenta("Wezterm")} as terminal?`, value: "needsWezterm" },
+          { title: `Install ${magenta("Herdr")} for AI Agent multiplexers?`, value: "needsHerdr" },
+          { title: `Add ${magenta("Pi")} as AI Agent?`, value: "needsPi" }
         ]
       },
-      {
-        onCancel: () => {
-          console.log(red("\u2716") + " Operation cancelled");
-          process.exit(1);
-        }
-      }
+      { onCancel: () => process.exit(0) }
     );
     const selection = {
       needsNeoVim: response.tools.includes("needsNeoVim"),
@@ -3025,31 +3260,18 @@ async function promptTools(argv) {
       needsPi: response.tools.includes("needsPi")
     };
     console.log(bold("\nThis is your configuration:\n"));
-    const labels = [
+    for (const [key, label] of [
       ["needsNeoVim", "Install NeoVim as IDE?"],
       ["needsWezterm", "Install Wezterm as terminal?"],
       ["needsHerdr", "Install Herdr for AI Agent multiplexers?"],
       ["needsPi", "Add Pi as AI Agent?"]
-    ];
-    for (const [key, label] of labels) {
-      console.log(
-        `  ${label}  ${selection[key] ? bold(blue("\u2713")) : bold(red("\u2717"))}`
-      );
+    ]) {
+      console.log(`  ${label}  ${selection[key] ? bold(blue("\u2713")) : bold(red("\u2717"))}`);
     }
     console.log("");
     const confirm = await (0, import_prompts.default)(
-      {
-        type: "confirm",
-        name: "value",
-        message: "Is this OK?",
-        initial: true
-      },
-      {
-        onCancel: () => {
-          console.log(red("\u2716") + " Operation cancelled");
-          process.exit(1);
-        }
-      }
+      { type: "confirm", name: "value", message: "Is this OK?", initial: true },
+      { onCancel: () => process.exit(0) }
     );
     if (confirm.value)
       return selection;
@@ -3059,7 +3281,13 @@ async function installWithPkgManager(key, stepNo) {
   const t = TOOLS[key];
   const p0 = toolPath(key);
   if (p0) {
-    success(`${t.name} is already installed (${p0})`);
+    const inPath = commandPath(t.check);
+    if (inPath) {
+      success(`${t.name} is already installed (${inPath})`);
+    } else {
+      success(`${t.name} is already installed (${p0})`);
+      info(`  \u21B3 add to PATH: export PATH="${p0.replace(/\/[^/]+$/, "")}:$PATH"`);
+    }
     return true;
   }
   const pm = detectPkgManager();
@@ -3082,7 +3310,7 @@ async function installWithPkgManager(key, stepNo) {
     if (pmFailed) {
       warn(`${t.name}: package manager failed, trying custom install...`);
     } else {
-      info(`${t.name}: no package available for ${pm.name || "this OS"}, trying custom install...`);
+      info(`${t.name}: no package for ${pm.name || "this OS"}, trying custom install...`);
     }
     const ok = await runConsole(
       `[${stepNo}] custom install ${t.name}`,
@@ -3090,7 +3318,12 @@ async function installWithPkgManager(key, stepNo) {
       t.customInstall.args
     );
     if (ok && toolPath(key)) {
-      success(`${t.name} installed successfully via custom install`);
+      const p = toolPath(key);
+      const inPath = commandPath(t.check);
+      success(`${t.name} installed via custom install`);
+      if (!inPath) {
+        info(`  \u21B3 add to PATH: export PATH="${p.replace(/\/[^/]+$/, "")}:$PATH"`);
+      }
       return true;
     }
     warn(`${t.name}: custom install failed \u2014 please install manually`);
@@ -3116,35 +3349,214 @@ async function installTools(tasks, opts) {
   }
   if (opts == null ? void 0 : opts.needsPi) {
     stepNo++;
-    info(
-      `[${stepNo}] Pi is installed via npm, run: npm install -g @anthropic/pi`
-    );
+    info(`[${stepNo}] Pi: npm install -g @anthropic/pi`);
     info("  (or your preferred npm-compatible package manager)");
   }
   divider();
   if (stepNo === 0) {
-    warn("No tools selected \u2014 nothing to install.");
+    warn("No tools selected.");
   } else if (failCount === 0) {
     success(`All ${okCount} tool(s) ready!`);
   } else {
     out(`  ${green(`\u2713 ${okCount} ready`)}  ${red(`\u2717 ${failCount} failed`)}`);
   }
-  return { ok: okCount, fail: failCount, steps: stepNo };
+}
+async function uninstallTools() {
+  const pm = detectPkgManager();
+  const removable = Object.entries(TOOLS).filter(([_, t]) => pm.name && t[pm.name]).map(([key, t]) => ({
+    title: `${t.name} (${t[pm.name]})`,
+    value: key
+  }));
+  if (removable.length === 0) {
+    warn(`No tools found that can be uninstalled via ${pm.name || "package manager"}.`);
+    return;
+  }
+  const response = await (0, import_prompts.default)(
+    {
+      type: "multiselect",
+      name: "tools",
+      message: "Select tools to uninstall:",
+      choices: removable
+    },
+    { onCancel: () => process.exit(0) }
+  );
+  if (response.tools.length === 0) {
+    info("Nothing selected.");
+    return;
+  }
+  const confirm = await (0, import_prompts.default)(
+    { type: "confirm", name: "value", message: "Are you sure?", initial: false },
+    { onCancel: () => process.exit(0) }
+  );
+  if (!confirm.value)
+    return;
+  divider();
+  let stepNo = 0;
+  for (const key of response.tools) {
+    stepNo++;
+    const t = TOOLS[key];
+    const pkgName = t[pm.name];
+    const args = pmRemoveArgs(pkgName, pm);
+    await runConsole(`[${stepNo}] remove ${t.name}`, args[0], args.slice(1));
+  }
+  divider();
+  success("Uninstall complete.");
+}
+async function promptAction() {
+  const response = await (0, import_prompts.default)(
+    {
+      type: "select",
+      name: "mode",
+      message: "What would you like to do?",
+      choices: [
+        { title: `\u{1F50D}  ${bold("Doctor")}  \u2014 check tool status`, value: "doctor" },
+        { title: `\u{1F4E6}  ${bold("Install")}  \u2014 install tools`, value: "install" },
+        { title: `\u{1F5D1}   ${bold("Uninstall")}  \u2014 remove tools`, value: "uninstall" },
+        { title: `\u{1F504}  ${bold("Sync config")}  \u2014 deploy config files`, value: "sync" },
+        { title: `\u{1F44B}  Exit`, value: "exit" }
+      ]
+    },
+    { onCancel: () => process.exit(0) }
+  );
+  return response.mode;
+}
+async function checkProxy() {
+  var _a;
+  const envProxy = process.env.https_proxy || process.env.HTTP_PROXY || "";
+  const gitProxy = ((_a = (0, import_node_child_process4.spawnSync)("git", ["config", "--global", "http.proxy"], {
+    stdio: "pipe",
+    encoding: "utf8"
+  }).stdout) == null ? void 0 : _a.trim()) || "";
+  info(`\u73AF\u5883\u4EE3\u7406: ${envProxy || dim("\u672A\u8BBE\u7F6E")}`);
+  info(`Git \u4EE3\u7406:  ${gitProxy || dim("\u672A\u8BBE\u7F6E")}`);
+  const resp = await (0, import_prompts.default)(
+    {
+      type: "select",
+      name: "action",
+      message: "\u4EE3\u7406\u8BBE\u7F6E",
+      choices: [
+        { title: "\u2713  \u7EE7\u7EED\uFF0C\u4E0D\u4FEE\u6539", value: "skip" },
+        { title: `\u{1F58A}   \u4FEE\u6539\u73AF\u5883\u4EE3\u7406 (\u5F53\u524D: ${envProxy || "\u672A\u8BBE\u7F6E"})`, value: "env" },
+        { title: `\u{1F58A}   \u4FEE\u6539 Git \u4EE3\u7406 (\u5F53\u524D: ${gitProxy || "\u672A\u8BBE\u7F6E"})`, value: "git" },
+        { title: `\u{1F5D1}   \u6E05\u9664 Git \u4EE3\u7406`, value: "git-clear" }
+      ]
+    },
+    { onCancel: () => {
+    } }
+  );
+  if (resp.action === "env") {
+    const val = await (0, import_prompts.default)(
+      {
+        type: "text",
+        name: "proxy",
+        message: "\u65B0\u4EE3\u7406\u5730\u5740 (\u7559\u7A7A=\u76F4\u8FDE):",
+        initial: envProxy
+      },
+      { onCancel: () => {
+      } }
+    );
+    if (val.proxy === "") {
+      delete process.env.http_proxy;
+      delete process.env.https_proxy;
+      delete process.env.HTTP_PROXY;
+      delete process.env.HTTPS_PROXY;
+      success("\u73AF\u5883\u4EE3\u7406\u5DF2\u6E05\u9664 (\u5F53\u524D\u8FDB\u7A0B)");
+    } else if (val.proxy) {
+      process.env.http_proxy = val.proxy;
+      process.env.https_proxy = val.proxy;
+      process.env.HTTP_PROXY = val.proxy;
+      process.env.HTTPS_PROXY = val.proxy;
+      success(`\u73AF\u5883\u4EE3\u7406\u5DF2\u8BBE\u4E3A: ${val.proxy}`);
+    }
+  }
+  if (resp.action === "git") {
+    const val = await (0, import_prompts.default)(
+      {
+        type: "text",
+        name: "proxy",
+        message: "Git \u4EE3\u7406\u5730\u5740 (\u7559\u7A7A=\u6E05\u9664):",
+        initial: gitProxy
+      },
+      { onCancel: () => {
+      } }
+    );
+    if (val.proxy === "" || val.proxy === void 0) {
+      (0, import_node_child_process4.spawnSync)("git", ["config", "--global", "--unset", "http.proxy"]);
+      (0, import_node_child_process4.spawnSync)("git", ["config", "--global", "--unset", "https.proxy"]);
+      success("Git \u4EE3\u7406\u5DF2\u6E05\u9664");
+    } else if (val.proxy) {
+      (0, import_node_child_process4.spawnSync)("git", ["config", "--global", "http.proxy", val.proxy]);
+      (0, import_node_child_process4.spawnSync)("git", ["config", "--global", "https.proxy", val.proxy]);
+      success(`Git \u4EE3\u7406\u5DF2\u8BBE\u4E3A: ${val.proxy}`);
+    }
+  }
+  if (resp.action === "git-clear") {
+    (0, import_node_child_process4.spawnSync)("git", ["config", "--global", "--unset", "http.proxy"]);
+    (0, import_node_child_process4.spawnSync)("git", ["config", "--global", "--unset", "https.proxy"]);
+    success("Git \u4EE3\u7406\u5DF2\u6E05\u9664");
+  }
 }
 async function run() {
   console.log(`
 ${banner_default}
 `);
+  await checkProxy();
+  console.log();
   const argv = (0, import_minimist.default)(process.argv.slice(2), { boolean: true });
-  const selection = await promptTools(argv);
-  const { needsNeoVim, needsWezterm, needsHerdr, needsPi } = selection;
-  const tasks = [
-    { key: "git", enabled: true },
-    { key: "nvim", enabled: needsNeoVim },
-    { key: "wezterm", enabled: needsWezterm },
-    { key: "herdr", enabled: needsHerdr }
-  ];
-  await installTools(tasks, { needsPi });
+  const hasFlags = argv.default || argv.nvim !== void 0 || argv.wezterm !== void 0 || argv.herdr !== void 0 || argv.pi !== void 0 || argv.doctor || argv.sync;
+  if (argv.doctor) {
+    await doctor(argv);
+    return;
+  }
+  if (argv.sync) {
+    await syncConfigs();
+    return;
+  }
+  if (hasFlags) {
+    const selection = await promptTools(argv);
+    const { needsNeoVim, needsWezterm, needsHerdr, needsPi } = selection;
+    await installTools(
+      [
+        { key: "git", enabled: true },
+        { key: "nvim", enabled: needsNeoVim },
+        { key: "wezterm", enabled: needsWezterm },
+        { key: "herdr", enabled: needsHerdr }
+      ],
+      { needsPi }
+    );
+    return;
+  }
+  while (true) {
+    const mode = await promptAction();
+    switch (mode) {
+      case "doctor":
+        await doctor(argv);
+        break;
+      case "install": {
+        const selection = await promptTools(argv);
+        const { needsNeoVim, needsWezterm, needsHerdr, needsPi } = selection;
+        await installTools(
+          [
+            { key: "git", enabled: true },
+            { key: "nvim", enabled: needsNeoVim },
+            { key: "wezterm", enabled: needsWezterm },
+            { key: "herdr", enabled: needsHerdr }
+          ],
+          { needsPi }
+        );
+        break;
+      }
+      case "uninstall":
+        await uninstallTools();
+        break;
+      case "sync":
+        await syncConfigs();
+        break;
+      case "exit":
+        info("Bye!");
+        return;
+    }
+  }
 }
 run().catch((e) => {
   console.error(e);
