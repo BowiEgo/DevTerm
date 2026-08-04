@@ -1,0 +1,168 @@
+# ============================================
+#  DevTerm — 引导脚本 (Windows)
+#
+#  npm 安装 (推荐):
+#    npx @bowiego/dev-term [--default]
+#
+#  本地脚本:
+#    powershell -ExecutionPolicy Bypass -File setup.ps1 [--default] [--nvim] [--wezterm] [--herdr] [--pi]
+#  远程管道:
+#    irm https://raw.githubusercontent.com/BowiEgo/DevTerm/main/setup.ps1 | iex
+# ============================================
+
+$ErrorActionPreference = "Continue"
+
+function Write-Success($Text) { Write-Host "  ✓ $Text" -ForegroundColor Green }
+function Write-Warn($Text)   { Write-Host "  ⚠  $Text" -ForegroundColor DarkYellow }
+function Write-Error2($Text) { Write-Host "  ✗ $Text" -ForegroundColor Red }
+function Write-Info($Text)   { Write-Host "  $Text" -ForegroundColor DarkGray }
+
+# ── 执行模式：本地脚本 vs 远程管道 ──
+$IsPiped = (-not $MyInvocation.MyCommand.Path) -or ($MyInvocation.MyCommand.Path -eq "")
+if ($IsPiped) {
+    $ScriptDir = $null  # 稍后克隆
+    $RepoUrl   = if ($env:DEVTERM_REPO) { $env:DEVTERM_REPO } else { "https://github.com/BowiEgo/DevTerm.git" }
+    $RepoBranch = if ($env:DEVTERM_BRANCH) { $env:DEVTERM_BRANCH } else { "main" }
+} else {
+    $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+}
+
+# ── 可编辑预填输入（backspace 可修改）；非交互环境回退 Read-Host ──
+function Read-EditableLine {
+    param([string]$Initial = "", [string]$Prompt = "")
+    try {
+        if (-not [Console]::IsInputRedirected) {
+            [Console]::Write($Prompt)
+            [Console]::Write($Initial)
+            $sb = [System.Text.StringBuilder]::new($Initial)
+            while ($true) {
+                $key = [Console]::ReadKey($true)
+                if ($key.Key -eq [ConsoleKey]::Enter) { break }
+                elseif ($key.Key -eq [ConsoleKey]::Backspace) {
+                    if ($sb.Length -gt 0) {
+                        $sb.Length--
+                        [Console]::Write("`b `b")
+                    }
+                }
+                elseif ($key.Key -eq [ConsoleKey]::Escape) { return $Initial }
+                elseif ($key.KeyChar -ne 0 -and $key.KeyChar -notmatch "[\r\n]") {
+                    if (-not ($key.Modifiers -band ([ConsoleModifiers]::Control -bor [ConsoleModifiers]::Alt))) {
+                        [void]$sb.Append($key.KeyChar)
+                        [Console]::Write($key.KeyChar)
+                    }
+                }
+            }
+            [Console]::WriteLine()
+            return $sb.ToString()
+        }
+    } catch {}
+    $v = Read-Host $Prompt
+    return $(if ([string]::IsNullOrWhiteSpace($v)) { $Initial } else { $v })
+}
+
+# ── 代理检测 ──
+Write-Host ""
+Write-Host "  DevTerm · 引导" -ForegroundColor Cyan
+Write-Host ""
+Write-Info "当前 http_proxy  = $(if($env:http_proxy){$env:http_proxy}else{'未设置'})"
+Write-Info "当前 https_proxy = $(if($env:https_proxy){$env:https_proxy}else{'未设置'})"
+Write-Host ""
+$default = if ($env:https_proxy) { $env:https_proxy } else { "http://127.0.0.1:7897" }
+Write-Info "代理地址（回车=默认/当前，直接输入覆盖，输入 direct=直连）"
+$proxy_ok = Read-EditableLine -Initial $default -Prompt "  > "
+if ($proxy_ok -match "^(direct|none|off)$" -or [string]::IsNullOrWhiteSpace($proxy_ok)) {
+    Write-Warn "已选择直连（不使用代理）"
+} elseif ($proxy_ok) {
+    $env:http_proxy = $env:https_proxy = $env:HTTP_PROXY = $env:HTTPS_PROXY = $env:all_proxy = $proxy_ok
+    Write-Success "已使用代理: $proxy_ok"
+    Write-Info "验证代理连通性..."
+    try {
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com" -Proxy $proxy_ok -TimeoutSec 8 -UseBasicParsing -Method Head -ErrorAction Stop | Out-Null
+        Write-Success "代理可用"
+    } catch {
+        Write-Warn "代理验证失败，继续尝试直连（可能较慢）"
+    }
+}
+Write-Host ""
+
+# ── 确保 Node.js (>= 18) ──
+function Get-NodeMajor {
+    try {
+        $v = (& node -v) 2>$null
+        if ($v -match 'v?(\d+)') { return [int]$Matches[1] }
+    } catch {}
+    return 0
+}
+
+$nodeMajor = Get-NodeMajor
+if ($nodeMajor -ge 18) {
+    Write-Success "Node.js $(& node -v) 已就绪"
+} else {
+    Write-Info "未检测到 Node.js (>= 18)，正在安装..."
+    $wingetArgs = @("install", "--id", "OpenJS.NodeJS", "-e", "--silent", "--accept-package-agreements", "--accept-source-agreements")
+    if ($env:https_proxy) { $wingetArgs += @("--proxy", $env:https_proxy) }
+    winget @wingetArgs 2>&1 | Out-Null
+    # 刷新 PATH
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + `
+                [Environment]::GetEnvironmentVariable("Path", "User")
+    $nodeMajor = Get-NodeMajor
+    if ($nodeMajor -lt 18) {
+        Write-Error2 "Node.js 安装失败，请手动安装: https://nodejs.org"
+        exit 1
+    }
+    Write-Success "Node.js $(& node -v) 已就绪"
+}
+
+# ── 克隆项目（仅远程管道模式）──
+if ($IsPiped) {
+    $ScriptDir = Join-Path $env:TEMP "devterm-$(Get-Random)"
+    New-Item -ItemType Directory -Path $ScriptDir -Force | Out-Null
+    Write-Info "克隆 DevTerm 到 ${ScriptDir} ..."
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        git clone --depth 1 --branch "$RepoBranch" "$RepoUrl" "$ScriptDir" 2>&1 | ForEach-Object { Write-Info "  git: $_" }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error2 "克隆失败，请检查网络或手动下载: $RepoUrl"
+            exit 1
+        }
+    } else {
+        $Tarball = "$RepoUrl/archive/refs/heads/${RepoBranch}.tar.gz" -replace '\.git/','/'
+        Write-Info "下载: ${Tarball}"
+        try {
+            Invoke-WebRequest -Uri $Tarball -OutFile "$env:TEMP\devterm.tar.gz" -UseBasicParsing -ErrorAction Stop
+            tar xzf "$env:TEMP\devterm.tar.gz" -C "$ScriptDir" --strip-components=1
+            Remove-Item "$env:TEMP\devterm.tar.gz" -Force
+        } catch {
+            Write-Error2 "下载失败，请检查网络"
+            Remove-Item $ScriptDir -Recurse -Force -ErrorAction SilentlyContinue
+            exit 1
+        }
+    }
+    Write-Success "项目就绪: ${ScriptDir}"
+}
+
+# ── 安装依赖 ──
+if (-not (Test-Path (Join-Path $ScriptDir "node_modules"))) {
+    Write-Info "安装依赖..."
+    Push-Location $ScriptDir
+    npm install --silent 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error2 "依赖安装失败"
+        Pop-Location
+        exit 1
+    }
+    Pop-Location
+    Write-Success "依赖安装完成"
+}
+
+# ── 运行 ──
+Write-Info "启动 DevTerm..."
+Push-Location $ScriptDir
+if (Test-Path "$ScriptDir\outfile.cjs") {
+    & node outfile.cjs @args
+} else {
+    Write-Info "未找到编译产物，使用 tsx 运行源码..."
+    & npx tsx ./index.ts @args
+}
+Pop-Location
+Write-Host ""
+Write-Info "DevTerm 已完成 — 终端保持打开"

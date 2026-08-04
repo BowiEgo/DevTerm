@@ -1,13 +1,12 @@
 {
-	"name": "dev-term",
+	"name": "@bowiego/dev-term",
 	"version": "0.1.0-beta",
 	"description": "An easy way to start a Vue project",
 	"bin": {
 		"dev-term": "outfile.cjs"
 	},
 	"files": [
-		"outfile.cjs",
-		"template"
+		"outfile.cjs"
 	],
 	"engines": {
 		"node": "^14.13.1 || >=16.0.0"

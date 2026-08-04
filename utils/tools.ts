@@ -89,7 +89,11 @@ const TOOLS = {
 			},
 		},
 	},
-} as const satisfies Record<string, ToolDef>;
+} as const;
+
+// Compile-time check: ensure every entry conforms to ToolDef
+type _AssertTools<T extends Record<string, ToolDef>> = T;
+type _TOOLS = _AssertTools<typeof TOOLS>;
 
 function commandPath(cmd: string): string | null {
 	const p = getPlatform();
