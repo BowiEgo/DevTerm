@@ -1,6 +1,6 @@
 {
 	"name": "@bowiego/dev-term",
-	"version": "0.1.0-beta",
+	"version": "0.1.1-beta",
 	"description": "An easy way to start a Vue project",
 	"bin": {
 		"dev-term": "outfile.cjs"

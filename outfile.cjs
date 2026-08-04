@@ -2805,6 +2805,10 @@ var TOOLS = {
     winget: "wez.wezterm",
     apt: "wezterm",
     brew: "wezterm",
+    customInstall: {
+      cmd: "sh",
+      args: ["-c", "curl -fsSL https://github.com/wez/wezterm/releases/latest/download/wezterm-x86_64-unknown-linux-gnu.AppImage -o /usr/local/bin/wezterm && chmod +x /usr/local/bin/wezterm"]
+    },
     deploy: {
       srcFile: ".wezterm.lua",
       dstPath: path2.join(HOMEDIR, ".wezterm.lua"),
@@ -2830,6 +2834,10 @@ var TOOLS = {
     name: "herdr",
     check: "herdr",
     official: true,
+    customInstall: {
+      cmd: "sh",
+      args: ["-c", "curl -fsSL https://herdr.dev/install.sh | bash"]
+    },
     deploy: {
       srcFile: ".herdr.config.toml",
       dstPath: herdrConfigPath,
@@ -3055,6 +3063,7 @@ async function installWithPkgManager(key, stepNo) {
     return true;
   }
   const pm = detectPkgManager();
+  let pmFailed = false;
   if (pm.name && pm.install && t[pm.name]) {
     const pkgName = t[pm.name];
     const args = pmInstallArgs(pkgName, pm);
@@ -3063,30 +3072,31 @@ async function installWithPkgManager(key, stepNo) {
       args[0],
       args.slice(1)
     );
-    if (ok) {
-      if (toolPath(key)) {
-        success(`${t.name} installed successfully`);
-        return true;
-      }
-      warn(
-        `${t.name}: installation appeared to succeed but ${t.check} not found in PATH`
-      );
-      return false;
+    if (ok && toolPath(key)) {
+      success(`${t.name} installed successfully`);
+      return true;
     }
-    warn(
-      `${t.name}: ${pm.name} installation failed \u2014 you may need to install it manually`
+    pmFailed = true;
+  }
+  if (t.customInstall) {
+    if (pmFailed) {
+      warn(`${t.name}: package manager failed, trying custom install...`);
+    } else {
+      info(`${t.name}: no package available for ${pm.name || "this OS"}, trying custom install...`);
+    }
+    const ok = await runConsole(
+      `[${stepNo}] custom install ${t.name}`,
+      t.customInstall.cmd,
+      t.customInstall.args
     );
+    if (ok && toolPath(key)) {
+      success(`${t.name} installed successfully via custom install`);
+      return true;
+    }
+    warn(`${t.name}: custom install failed \u2014 please install manually`);
     return false;
   }
-  if (!pm.name) {
-    warn(
-      `${t.name}: no supported package manager detected, please install manually`
-    );
-  } else {
-    warn(
-      `${t.name}: no ${pm.name} package name configured, please install manually`
-    );
-  }
+  warn(`${t.name}: please install manually (${t.check})`);
   return false;
 }
 async function installTools(tasks, opts) {

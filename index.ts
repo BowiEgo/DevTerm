@@ -11,7 +11,7 @@ import {
 	type PkgManager,
 	pmInstallArgs,
 } from "./utils/pkgManager";
-import { TOOLS, toolPath } from "./utils/tools";
+import { TOOLS, toolPath, type CustomInstall } from "./utils/tools";
 
 interface ToolsSelection {
 	needsNeoVim: boolean;
@@ -124,6 +124,8 @@ async function installWithPkgManager(
 	}
 
 	const pm: PkgManager = detectPkgManager();
+	let pmFailed = false;
+
 	if (pm.name && pm.install && t[pm.name as keyof typeof t]) {
 		const pkgName = t[pm.name as keyof typeof t] as string;
 		const args = pmInstallArgs(pkgName, pm);
@@ -133,31 +135,34 @@ async function installWithPkgManager(
 			args.slice(1),
 		);
 
-		if (ok) {
-			if (toolPath(key)) {
-				success(`${t.name} installed successfully`);
-				return true;
-			}
-			warn(
-				`${t.name}: installation appeared to succeed but ${t.check} not found in PATH`,
-			);
-			return false;
+		if (ok && toolPath(key)) {
+			success(`${t.name} installed successfully`);
+			return true;
 		}
-		warn(
-			`${t.name}: ${pm.name} installation failed — you may need to install it manually`,
+		pmFailed = true;
+	}
+
+	// Fallback: custom install (e.g. curl | bash, AppImage, etc.)
+	if (t.customInstall) {
+		if (pmFailed) {
+			warn(`${t.name}: package manager failed, trying custom install...`);
+		} else {
+			info(`${t.name}: no package available for ${pm.name || "this OS"}, trying custom install...`);
+		}
+		const ok = await runConsole(
+			`[${stepNo}] custom install ${t.name}`,
+			t.customInstall.cmd,
+			t.customInstall.args,
 		);
+		if (ok && toolPath(key)) {
+			success(`${t.name} installed successfully via custom install`);
+			return true;
+		}
+		warn(`${t.name}: custom install failed — please install manually`);
 		return false;
 	}
 
-	if (!pm.name) {
-		warn(
-			`${t.name}: no supported package manager detected, please install manually`,
-		);
-	} else {
-		warn(
-			`${t.name}: no ${pm.name} package name configured, please install manually`,
-		);
-	}
+	warn(`${t.name}: please install manually (${t.check})`);
 	return false;
 }
 

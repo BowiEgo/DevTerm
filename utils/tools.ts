@@ -17,11 +17,19 @@ interface ToolDef {
 	/** Binary name used to check existence */
 	readonly check: string;
 	/** Package identifiers keyed by package manager name (winget, apt, brew, etc.) */
-	readonly [pkgManager: string]: string | boolean | DeployOptions | undefined;
+	readonly [pkgManager: string]: string | boolean | DeployOptions | CustomInstall | undefined;
 	/** Whether this tool is provided by the official vendor */
 	readonly official?: boolean;
 	/** Config deployment options (for tools that ship config files) */
 	readonly deploy?: DeployOptions;
+	/** Custom install command for when system PM doesn't have this tool */
+	readonly customInstall?: CustomInstall;
+}
+
+interface CustomInstall {
+	cmd: string;
+	args: string[];
+	shell?: boolean;
 }
 
 function herdrConfigPath(): string {
@@ -49,6 +57,10 @@ const TOOLS = {
 		winget: "wez.wezterm",
 		apt: "wezterm",
 		brew: "wezterm",
+		customInstall: {
+			cmd: "sh",
+			args: ["-c", "curl -fsSL https://github.com/wez/wezterm/releases/latest/download/wezterm-x86_64-unknown-linux-gnu.AppImage -o /usr/local/bin/wezterm && chmod +x /usr/local/bin/wezterm"],
+		},
 		deploy: {
 			srcFile: ".wezterm.lua",
 			dstPath: path.join(HOMEDIR, ".wezterm.lua"),
@@ -74,6 +86,10 @@ const TOOLS = {
 		name: "herdr",
 		check: "herdr",
 		official: true,
+		customInstall: {
+			cmd: "sh",
+			args: ["-c", "curl -fsSL https://herdr.dev/install.sh | bash"],
+		},
 		deploy: {
 			srcFile: ".herdr.config.toml",
 			dstPath: herdrConfigPath,
@@ -140,5 +156,5 @@ function toolPath(key: keyof typeof TOOLS): string | null {
 	return null;
 }
 
-export type { ToolDef };
+export type { CustomInstall, ToolDef };
 export { commandExists, commandPath, TOOLS, toolPath };
