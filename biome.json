@@ -1,0 +1,76 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.5/schema.json",
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
+	},
+	"files": {
+		"includes": ["**", "!!**/dist"]
+	},
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab"
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended"
+		}
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "double"
+		}
+	},
+	"css": {
+		"formatter": {
+			"quoteStyle": "single"
+		},
+		"parser": {
+			"tailwindDirectives": true
+		}
+	},
+	"assist": {
+		"enabled": true,
+		"actions": {
+			"source": {
+				"organizeImports": {
+					"level": "on",
+					"options": {
+						"groups": [
+							[":NODE:", ":BUN:"],
+							":BLANK_LINE:",
+
+							":PACKAGE:",
+							":BLANK_LINE:",
+
+							"@/contexts/**",
+							":BLANK_LINE:",
+
+							"@/layouts/**",
+							"@/pages/**",
+							"@/components/**",
+							":BLANK_LINE:",
+
+							"@/locales/**",
+							":BLANK_LINE:",
+
+							"@/styles/**",
+							":BLANK_LINE:",
+
+							"@/assets/**",
+							":BLANK_LINE:",
+
+							["./**/*.css", "../**/*.css"],
+							":BLANK_LINE:",
+
+							":PATH:",
+							":ALIAS:"
+						]
+					}
+				}
+			}
+		}
+	}
+}

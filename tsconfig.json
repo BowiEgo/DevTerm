@@ -1,0 +1,12 @@
+{
+  "extends": "@vue/tsconfig/tsconfig.node.json",
+  "include": ["index.ts", "utils/**/*"],
+  "compilerOptions": {
+    "strict": false,
+    // If you are targeting CommonJS environment,
+    // and use `tsc` or `ts-node` for transpilation,
+    // you might need to manually override the following fields:
+    "module": "CommonJS",
+    "preserveValueImports": false
+  }
+}

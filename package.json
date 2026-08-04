@@ -1,0 +1,56 @@
+{
+	"name": "dev-term",
+	"version": "0.1.0-beta",
+	"description": "An easy way to start a Vue project",
+	"bin": {
+		"dev-term": "outfile.cjs"
+	},
+	"files": [
+		"outfile.cjs",
+		"template"
+	],
+	"engines": {
+		"node": "^14.13.1 || >=16.0.0"
+	},
+	"scripts": {
+		"dev": "tsx ./index.ts",
+		"build": "zx ./scripts/build.mjs"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/bowiego/DevTerm.git"
+	},
+	"keywords": [],
+	"author": "bowiego <295030485@qq.com>",
+	"license": "MIT",
+	"bugs": {
+		"url": "https://github.com/bowiego/DevTerm/issues"
+	},
+	"homepage": "https://github.com/bowiego/DevTerm#readme",
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.5",
+		"@types/eslint": "^8.4.5",
+		"@types/node": "^22.19.1",
+		"@types/prompts": "^2.0.14",
+		"@vue/tsconfig": "^0.1.3",
+		"diff": "^5.1.0",
+		"esbuild": "^0.14.49",
+		"esbuild-plugin-license": "^1.2.2",
+		"gradient-string": "^3.0.0",
+		"husky": "^8.0.1",
+		"kolorist": "^1.5.1",
+		"lint-staged": "^13.0.3",
+		"minimist": "^1.2.6",
+		"npm-run-all": "^4.1.5",
+		"prettier": "^2.7.1",
+		"prompts": "^2.4.2",
+		"ts-node": "^10.9.2",
+		"tsx": "^4.23.5",
+		"zx": "^4.3.0"
+	},
+	"lint-staged": {
+		"*.{js,ts,vue,json}": [
+			"prettier --write"
+		]
+	}
+}
