@@ -1,13 +1,13 @@
 import getPlatform, { Platform } from "./platform";
 import { commandExists } from "./tools";
 
-export interface Package {
+export interface PkgManager {
 	name: string | null;
 	install?: string[];
 	update?: string[];
 }
 
-function detectPackage(): Package {
+function detectPkgManager(): PkgManager {
 	const p: Platform = getPlatform();
 
 	switch (p) {
@@ -89,10 +89,10 @@ function detectPackage(): Package {
 	return { name: null };
 }
 
-/** Replace "PLACEHOLDER" in pkg.install args with the actual package name */
-function pmInstallArgs(pkgName: string, pkg: Package): string[] {
-	if (!pkg.install) return [];
-	return pkg.install.map((arg) => (arg === "PLACEHOLDER" ? pkgName : arg));
+/** Replace "PLACEHOLDER" in pm.install args with the actual package name */
+function pmInstallArgs(pkgName: string, pm: PkgManager): string[] {
+	if (!pm.install) return [];
+	return pm.install.map((arg) => (arg === "PLACEHOLDER" ? pkgName : arg));
 }
 
-export { detectPackage, pmInstallArgs };
+export { detectPkgManager, pmInstallArgs };
